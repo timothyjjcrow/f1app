@@ -4,6 +4,6 @@
   "outputDirectory": "f1-data-viz/frontend/dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
