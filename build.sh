@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Build script for Vercel deployment
+set -e # Exit immediately if a command exits with a non-zero status
 
 echo "🏗️ Starting build process..."
 
-# Install root dependencies if any
+# Install root dependencies
 echo "📦 Installing root dependencies..."
 npm install
 
@@ -25,6 +26,15 @@ echo "✅ Backend build completed"
 echo "🏗️ Setting up API directory..."
 cd ../../
 mkdir -p api
-cp -f api/index.js api/index.js 2>/dev/null || echo "API entry point already exists"
+if [ ! -f api/index.js ]; then
+  echo "// This file serves as an entry point for Vercel serverless API functions" > api/index.js
+  echo "const app = require('../f1-data-viz/backend/server.js');" >> api/index.js
+  echo "" >> api/index.js
+  echo "// Export a module that can be used as a Vercel serverless function" >> api/index.js
+  echo "module.exports = app;" >> api/index.js
+  echo "Created API entry point"
+else
+  echo "API entry point already exists"
+fi
 
 echo "✅ Build process completed successfully!" 
