@@ -1,0 +1,30 @@
+{
+  "name": "f1-data-viz",
+  "version": "1.0.0",
+  "description": "Formula 1 Data Visualization Application",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
+    "start:backend": "cd backend && npm run dev",
+    "start:frontend": "cd frontend && npm run dev",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install"
+  },
+  "keywords": [
+    "formula1",
+    "f1",
+    "data-visualization",
+    "react",
+    "node",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

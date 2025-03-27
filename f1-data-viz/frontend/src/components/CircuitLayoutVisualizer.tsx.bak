@@ -1,0 +1,2248 @@
+// src/components/CircuitLayoutVisualizer.tsx
+
+import React, { useState, useEffect, useMemo, useRef } from "react"; // Added useRef
+import { useSeasonContext } from "../contexts/SeasonContext"; // Assuming path
+import { useRaceResultsContext } from "../contexts/RaceResultsContext"; // Assuming path
+import ErrorBoundary from "./ErrorBoundary"; // Assuming path
+
+// --- Enhanced Interfaces ---
+
+interface CircuitInfo {
+  id: string;
+  name: string;
+  location: string;
+  country: string;
+  firstGrandPrix: number;
+  laps: number;
+  length: string; // in km
+  // SVG Component that renders the circuit
+  svgComponent: React.FC<CircuitSVGProps>;
+  // Additional circuit details
+  sectors?: {
+    [key: string]: {
+      name: string;
+      description: string;
+      color: string;
+    };
+  };
+  turns?: {
+    [key: string]: {
+      number: number;
+      name?: string;
+      description?: string;
+    };
+  };
+  // Reference to the main track path element for calculations
+  trackPathRef?: React.RefObject<SVGPathElement>;
+}
+
+interface CircuitSVGProps extends React.SVGProps<SVGSVGElement> {
+  highlightedSector?: string;
+  highlightedTurn?: string;
+  onSectorClick?: (sectorId: string) => void;
+  onTurnClick?: (turnId: string) => void;
+  lapProgress?: number; // 0-1 for animation
+  // Pass the ref for the main track path
+  trackPathRef: React.RefObject<SVGPathElement>;
+}
+
+interface DriverFastestLap {
+  driverId: string;
+  driverName: string;
+  teamName: string;
+  lapTime: string; // Formatted time string
+  lapNumber: string;
+  raceName: string; // Race where fastest lap occurred
+  sectors?: {
+    // Optional: Sector data might not be available
+    [key: string]: {
+      time: string;
+    };
+  };
+}
+
+// --- SVG Components for Real F1 Circuits ---
+
+// Monaco Circuit SVG Component (Updated with more accurate path)
+const MonacoCircuitSVG: React.FC<CircuitSVGProps> = ({
+  highlightedSector,
+  highlightedTurn,
+  onSectorClick,
+  onTurnClick,
+  lapProgress,
+  trackPathRef,
+  ...props
+}) => {
+  const trackColor = "#CCCCCC";
+  const trackWidth = 10;
+  const sectorOpacity = 0.3;
+  const highlightOpacity = 0.7;
+
+  // More accurate representation of Monaco circuit path
+  // This is a simplified but more accurate version of the Monaco layout
+  const monacoTrackPath =
+    "M 120 300 L 120 200 C 120 150, 150 120, 200 120 L 300 120 C 350 120, 380 150, 380 200 " +
+    "L 380 250 C 380 280, 360 310, 330 310 L 300 310 C 260 310, 230 340, 230 380 " +
+    "L 230 450 C 230 480, 260 510, 290 510 L 350 510 C 390 510, 420 480, 420 440 " +
+    "L 420 400 C 420 370, 440 340, 470 340 L 530 340 C 560 340, 580 370, 580 400 " +
+    "L 580 450 C 580 490, 550 520, 510 520 L 200 520 C 150 520, 120 490, 120 440 " +
+    "L 120 310 Z";
+
+  // Define sector paths based on actual Monaco circuit sectors
+  const sectors = {
+    sector1: {
+      path: "M 120 300 L 120 200 C 120 150, 150 120, 200 120 L 300 120 C 350 120, 380 150, 380 200 L 380 250",
+      color: "rgba(255, 0, 0, ",
+    }, // Sector 1: Start to Casino Square
+    sector2: {
+      path: "M 380 250 C 380 280, 360 310, 330 310 L 300 310 C 260 310, 230 340, 230 380 L 230 450 C 230 480, 260 510, 290 510",
+      color: "rgba(0, 255, 0, ",
+    }, // Sector 2: Casino to Tunnel exit
+    sector3: {
+      path: "M 290 510 L 350 510 C 390 510, 420 480, 420 440 L 420 400 C 420 370, 440 340, 470 340 L 530 340 C 560 340, 580 370, 580 400 L 580 450 C 580 490, 550 520, 510 520 L 200 520 C 150 520, 120 490, 120 440 L 120 310",
+      color: "rgba(0, 0, 255, ",
+    }, // Sector 3: Nouvelle Chicane to finish
+  };
+
+  // Important corners and turns in Monaco with actual positions
+  const turns = {
+    turn1: { x: 120, y: 280, r: 12, name: "Sainte Devote" },
+    turn4: { x: 350, y: 120, r: 12, name: "Casino Square" },
+    turn6: { x: 230, y: 380, r: 12, name: "Grand Hotel Hairpin" },
+    turn10: { x: 290, y: 510, r: 12, name: "Nouvelle Chicane" },
+    turn12: { x: 470, y: 340, r: 12, name: "Tabac" },
+    turn19: { x: 120, y: 400, r: 12, name: "Anthony Noghes" },
+  };
+
+  // Driver position animation logic (same as before)
+  const [driverPosition, setDriverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (
+      trackPathRef.current &&
+      typeof lapProgress === "number" &&
+      lapProgress >= 0 &&
+      lapProgress <= 1
+    ) {
+      const pathElement = trackPathRef.current;
+      const totalLength = pathElement.getTotalLength();
+      if (totalLength > 0) {
+        const point = pathElement.getPointAtLength(lapProgress * totalLength);
+        setDriverPosition({ x: point.x, y: point.y });
+      } else {
+        setDriverPosition(null);
+      }
+    } else {
+      setDriverPosition(null);
+    }
+  }, [lapProgress, trackPathRef]);
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 700 600"
+      preserveAspectRatio="xMidYMid meet"
+      {...props}
+    >
+      {/* Optional: Background grid for reference */}
+      <g opacity="0.1">
+        {Array.from({ length: 14 }).map((_, i) => (
+          <line
+            key={`vgrid-${i}`}
+            x1={(i + 1) * 50}
+            y1="0"
+            x2={(i + 1) * 50}
+            y2="600"
+            stroke="#666"
+            strokeWidth="1"
+          />
+        ))}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <line
+            key={`hgrid-${i}`}
+            x1="0"
+            y1={(i + 1) * 50}
+            x2="700"
+            y2={(i + 1) * 50}
+            stroke="#666"
+            strokeWidth="1"
+          />
+        ))}
+      </g>
+
+      {/* Sector highlight paths */}
+      {Object.entries(sectors).map(([id, sector]) => (
+        <path
+          key={id}
+          d={sector.path}
+          fill="none"
+          stroke={
+            sector.color +
+            (highlightedSector === id ? highlightOpacity : sectorOpacity) +
+            ")"
+          }
+          strokeWidth={trackWidth + 6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          onClick={() => onSectorClick && onSectorClick(id)}
+          style={{ cursor: "pointer" }}
+        />
+      ))}
+
+      {/* Main Track Path */}
+      <path
+        ref={trackPathRef}
+        d={monacoTrackPath}
+        fill="none"
+        stroke={trackColor}
+        strokeWidth={trackWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Start/Finish Line */}
+      <line
+        x1="120"
+        y1="290"
+        x2="120"
+        y2="310"
+        stroke="#FFDD00"
+        strokeWidth="5"
+      />
+
+      {/* Turn Markers */}
+      {Object.entries(turns).map(([id, turn]) => (
+        <g
+          key={id}
+          transform={`translate(${turn.x}, ${turn.y})`}
+          style={{ cursor: "pointer" }}
+          onClick={() => onTurnClick && onTurnClick(id)}
+        >
+          <circle
+            r={turn.r}
+            fill={highlightedTurn === id ? "yellow" : "white"}
+            stroke="black"
+            strokeWidth="1"
+            opacity={highlightedTurn === id ? 1 : 0.7}
+          />
+          <text
+            x={turn.r + 5}
+            y="4"
+            fontSize="10"
+            fill="white"
+            opacity="0.9"
+            style={{ display: highlightedTurn === id ? "block" : "none" }}
+          >
+            {turn.name}
+          </text>
+        </g>
+      ))}
+
+      {/* Driver Position Animation Dot */}
+      {driverPosition && (
+        <circle
+          cx={driverPosition.x}
+          cy={driverPosition.y}
+          r="7"
+          fill="red"
+          stroke="white"
+          strokeWidth="1.5"
+          filter="url(#driver-glow)"
+        />
+      )}
+
+      {/* Circuit labels */}
+      <text x="260" y="60" fill="#999" fontSize="14" fontWeight="bold">
+        Circuit de Monaco
+      </text>
+
+      {/* SVG Filters */}
+      <defs>
+        <filter id="driver-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+};
+
+// Silverstone Circuit SVG (Updated with more accurate path)
+const SilverstoneCircuitSVG: React.FC<CircuitSVGProps> = ({
+  highlightedSector,
+  highlightedTurn,
+  onSectorClick,
+  onTurnClick,
+  lapProgress,
+  trackPathRef,
+  ...props
+}) => {
+  const trackColor = "#CCCCCC";
+  const trackWidth = 8;
+  const sectorOpacity = 0.3;
+  const highlightOpacity = 0.7;
+
+  // More accurate representation of Silverstone circuit
+  const silverstoneTrackPath =
+    "M 200,150 L 150,150 C 120,150 100,170 100,200 L 100,230 C 100,260 120,280 150,280 " +
+    "L 250,280 C 270,280 290,290 300,310 L 330,360 C 340,380 360,390 380,390 " +
+    "L 450,390 C 470,390 490,380 500,360 L 540,300 C 550,280 580,270 600,270 " +
+    "L 650,270 C 680,270 700,250 700,220 L 700,180 C 700,150 680,130 650,130 " +
+    "L 500,130 C 470,130 450,110 450,80 L 450,50 C 450,20 430,0 400,0 " +
+    "L 250,0 C 220,0 200,20 200,50 Z";
+
+  // Define sectors for Silverstone based on actual track sectors
+  const sectors = {
+    sector1: {
+      path: "M 200,150 L 150,150 C 120,150 100,170 100,200 L 100,230 C 100,260 120,280 150,280 L 250,280",
+      color: "rgba(255, 0, 0, ",
+    }, // Sector 1: Start to Maggots
+    sector2: {
+      path: "M 250,280 C 270,280 290,290 300,310 L 330,360 C 340,380 360,390 380,390 L 450,390",
+      color: "rgba(0, 255, 0, ",
+    }, // Sector 2: Maggots to Stowe
+    sector3: {
+      path: "M 450,390 C 470,390 490,380 500,360 L 540,300 C 550,280 580,270 600,270 L 650,270 C 680,270 700,250 700,220 L 700,180 C 700,150 680,130 650,130 L 500,130 C 470,130 450,110 450,80 L 450,50 C 450,20 430,0 400,0 L 250,0 C 220,0 200,20 200,50 Z",
+      color: "rgba(0, 0, 255, ",
+    }, // Sector 3: Stowe to finish
+  };
+
+  // Key turns on the Silverstone circuit
+  const turns = {
+    turn1: { x: 200, y: 150, r: 10, name: "Abbey" },
+    turn3: { x: 100, y: 230, r: 10, name: "Village" },
+    turn6: { x: 250, y: 280, r: 10, name: "Brooklands" },
+    turn9: { x: 380, y: 390, r: 10, name: "Copse" },
+    turn13: { x: 650, y: 270, r: 10, name: "Stowe" },
+    turn15: { x: 450, y: 50, r: 10, name: "Club" },
+  };
+
+  // Driver position animation logic
+  const [driverPosition, setDriverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (
+      trackPathRef.current &&
+      typeof lapProgress === "number" &&
+      lapProgress >= 0 &&
+      lapProgress <= 1
+    ) {
+      const pathElement = trackPathRef.current;
+      const totalLength = pathElement.getTotalLength();
+      if (totalLength > 0) {
+        const point = pathElement.getPointAtLength(lapProgress * totalLength);
+        setDriverPosition({ x: point.x, y: point.y });
+      } else {
+        setDriverPosition(null);
+      }
+    } else {
+      setDriverPosition(null);
+    }
+  }, [lapProgress, trackPathRef]);
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 800 450"
+      preserveAspectRatio="xMidYMid meet"
+      {...props}
+    >
+      {/* Optional background grid */}
+      <g opacity="0.1">
+        {Array.from({ length: 16 }).map((_, i) => (
+          <line
+            key={`vgrid-${i}`}
+            x1={(i + 1) * 50}
+            y1="0"
+            x2={(i + 1) * 50}
+            y2="450"
+            stroke="#666"
+            strokeWidth="1"
+          />
+        ))}
+        {Array.from({ length: 9 }).map((_, i) => (
+          <line
+            key={`hgrid-${i}`}
+            x1="0"
+            y1={(i + 1) * 50}
+            x2="800"
+            y2={(i + 1) * 50}
+            stroke="#666"
+            strokeWidth="1"
+          />
+        ))}
+      </g>
+
+      {/* Sector highlight paths */}
+      {Object.entries(sectors).map(([id, sector]) => (
+        <path
+          key={id}
+          d={sector.path}
+          fill="none"
+          stroke={
+            sector.color +
+            (highlightedSector === id ? highlightOpacity : sectorOpacity) +
+            ")"
+          }
+          strokeWidth={trackWidth + 5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          onClick={() => onSectorClick && onSectorClick(id)}
+          style={{ cursor: "pointer" }}
+        />
+      ))}
+
+      {/* Main Track Path */}
+      <path
+        ref={trackPathRef}
+        d={silverstoneTrackPath}
+        fill="none"
+        stroke={trackColor}
+        strokeWidth={trackWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Start/Finish Line */}
+      <line
+        x1="190"
+        y1="150"
+        x2="210"
+        y2="150"
+        stroke="#FFDD00"
+        strokeWidth="5"
+        transform="rotate(90 200 150)"
+      />
+
+      {/* Turn Markers */}
+      {Object.entries(turns).map(([id, turn]) => (
+        <g
+          key={id}
+          transform={`translate(${turn.x}, ${turn.y})`}
+          style={{ cursor: "pointer" }}
+          onClick={() => onTurnClick && onTurnClick(id)}
+        >
+          <circle
+            r={turn.r}
+            fill={highlightedTurn === id ? "yellow" : "white"}
+            stroke="black"
+            strokeWidth="1"
+            opacity={highlightedTurn === id ? 1 : 0.7}
+          />
+          <text
+            x={turn.r + 5}
+            y="4"
+            fontSize="9"
+            fill="white"
+            opacity="0.9"
+            style={{ display: highlightedTurn === id ? "block" : "none" }}
+          >
+            {turn.name}
+          </text>
+        </g>
+      ))}
+
+      {/* Driver Position Animation Dot */}
+      {driverPosition && (
+        <circle
+          cx={driverPosition.x}
+          cy={driverPosition.y}
+          r="6"
+          fill="blue"
+          stroke="white"
+          strokeWidth="1.5"
+          filter="url(#driver-glow-silverstone)"
+        />
+      )}
+
+      {/* Circuit labels */}
+      <text x="350" y="30" fill="#999" fontSize="14" fontWeight="bold">
+        Silverstone Circuit
+      </text>
+
+      {/* SVG Filters */}
+      <defs>
+        <filter
+          id="driver-glow-silverstone"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+        >
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+};
+
+// Spa-Francorchamps Circuit SVG
+const SpaCircuitSVG: React.FC<CircuitSVGProps> = ({
+  highlightedSector,
+  highlightedTurn,
+  onSectorClick,
+  onTurnClick,
+  lapProgress,
+  trackPathRef,
+  ...props
+}) => {
+  const trackColor = "#CCCCCC";
+  const trackWidth = 8;
+  const sectorOpacity = 0.3;
+  const highlightOpacity = 0.7;
+
+  // Simplified representation of Spa-Francorchamps
+  const spaTrackPath =
+    "M 50,300 L 100,250 C 120,230 150,220 180,220 L 250,220 C 280,220 300,200 300,170 " +
+    "L 300,100 C 300,70 320,50 350,50 L 500,50 C 530,50 550,70 550,100 " +
+    "L 550,150 C 550,180 570,200 600,200 L 700,200 C 730,200 750,220 750,250 " +
+    "L 750,300 C 750,320 730,340 700,340 L 650,340 C 620,340 600,360 600,390 " +
+    "L 600,450 C 600,480 580,500 550,500 L 200,500 C 170,500 150,480 150,450 " +
+    "L 150,400 C 150,370 130,350 100,350 L 50,350 Z";
+
+  // Define sectors for Spa-Francorchamps
+  const sectors = {
+    sector1: {
+      path: "M 50,300 L 100,250 C 120,230 150,220 180,220 L 250,220 C 280,220 300,200 300,170 L 300,100 C 300,70 320,50 350,50",
+      color: "rgba(255, 0, 0, ",
+    }, // Sector 1: Start to Les Combes
+    sector2: {
+      path: "M 350,50 L 500,50 C 530,50 550,70 550,100 L 550,150 C 550,180 570,200 600,200 L 700,200",
+      color: "rgba(0, 255, 0, ",
+    }, // Sector 2: Les Combes to Pouhon
+    sector3: {
+      path: "M 700,200 C 730,200 750,220 750,250 L 750,300 C 750,320 730,340 700,340 L 650,340 C 620,340 600,360 600,390 L 600,450 C 600,480 580,500 550,500 L 200,500 C 170,500 150,480 150,450 L 150,400 C 150,370 130,350 100,350 L 50,350 Z",
+      color: "rgba(0, 0, 255, ",
+    }, // Sector 3: Pouhon to finish
+  };
+
+  // Key turns on Spa-Francorchamps
+  const turns = {
+    turn1: { x: 50, y: 300, r: 10, name: "La Source" },
+    turn3: { x: 300, y: 170, r: 10, name: "Eau Rouge" },
+    turn7: { x: 550, y: 100, r: 10, name: "Les Combes" },
+    turn10: { x: 700, y: 200, r: 10, name: "Pouhon" },
+    turn15: { x: 600, y: 390, r: 10, name: "Blanchimont" },
+    turn19: { x: 150, y: 400, r: 10, name: "Bus Stop" },
+  };
+
+  // Driver position animation logic
+  const [driverPosition, setDriverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (
+      trackPathRef.current &&
+      typeof lapProgress === "number" &&
+      lapProgress >= 0 &&
+      lapProgress <= 1
+    ) {
+      const pathElement = trackPathRef.current;
+      const totalLength = pathElement.getTotalLength();
+      if (totalLength > 0) {
+        const point = pathElement.getPointAtLength(lapProgress * totalLength);
+        setDriverPosition({ x: point.x, y: point.y });
+      } else {
+        setDriverPosition(null);
+      }
+    } else {
+      setDriverPosition(null);
+    }
+  }, [lapProgress, trackPathRef]);
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 800 550"
+      preserveAspectRatio="xMidYMid meet"
+      {...props}
+    >
+      {/* Sector highlight paths */}
+      {Object.entries(sectors).map(([id, sector]) => (
+        <path
+          key={id}
+          d={sector.path}
+          fill="none"
+          stroke={
+            sector.color +
+            (highlightedSector === id ? highlightOpacity : sectorOpacity) +
+            ")"
+          }
+          strokeWidth={trackWidth + 5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          onClick={() => onSectorClick && onSectorClick(id)}
+          style={{ cursor: "pointer" }}
+        />
+      ))}
+
+      {/* Main Track Path */}
+      <path
+        ref={trackPathRef}
+        d={spaTrackPath}
+        fill="none"
+        stroke={trackColor}
+        strokeWidth={trackWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Start/Finish Line */}
+      <line
+        x1="50"
+        y1="290"
+        x2="50"
+        y2="310"
+        stroke="#FFDD00"
+        strokeWidth="5"
+      />
+
+      {/* Turn Markers */}
+      {Object.entries(turns).map(([id, turn]) => (
+        <g
+          key={id}
+          transform={`translate(${turn.x}, ${turn.y})`}
+          style={{ cursor: "pointer" }}
+          onClick={() => onTurnClick && onTurnClick(id)}
+        >
+          <circle
+            r={turn.r}
+            fill={highlightedTurn === id ? "yellow" : "white"}
+            stroke="black"
+            strokeWidth="1"
+            opacity={highlightedTurn === id ? 1 : 0.7}
+          />
+          <text
+            x={turn.r + 5}
+            y="4"
+            fontSize="9"
+            fill="white"
+            opacity="0.9"
+            style={{ display: highlightedTurn === id ? "block" : "none" }}
+          >
+            {turn.name}
+          </text>
+        </g>
+      ))}
+
+      {/* Driver Position Animation Dot */}
+      {driverPosition && (
+        <circle
+          cx={driverPosition.x}
+          cy={driverPosition.y}
+          r="6"
+          fill="yellow"
+          stroke="black"
+          strokeWidth="1.5"
+          filter="url(#driver-glow-spa)"
+        />
+      )}
+
+      {/* Circuit labels */}
+      <text x="300" y="30" fill="#999" fontSize="14" fontWeight="bold">
+        Circuit de Spa-Francorchamps
+      </text>
+
+      {/* SVG Filters */}
+      <defs>
+        <filter
+          id="driver-glow-spa"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+        >
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+};
+
+// Monza Circuit SVG
+const MonzaCircuitSVG: React.FC<CircuitSVGProps> = ({
+  highlightedSector,
+  highlightedTurn,
+  onSectorClick,
+  onTurnClick,
+  lapProgress,
+  trackPathRef,
+  ...props
+}) => {
+  const trackColor = "#CCCCCC";
+  const trackWidth = 8;
+  const sectorOpacity = 0.3;
+  const highlightOpacity = 0.7;
+
+  // Simplified representation of Monza circuit
+  const monzaTrackPath =
+    "M 150,400 L 150,300 C 150,270 170,250 200,250 L 400,250 C 430,250 450,230 450,200 " +
+    "L 450,100 C 450,70 470,50 500,50 L 600,50 C 630,50 650,70 650,100 " +
+    "L 650,200 C 650,230 670,250 700,250 L 750,250 C 780,250 800,270 800,300 " +
+    "L 800,350 C 800,380 780,400 750,400 L 700,400 C 670,400 650,420 650,450 " +
+    "L 650,500 C 650,530 630,550 600,550 L 500,550 C 470,550 450,530 450,500 " +
+    "L 450,450 C 450,420 430,400 400,400 L 200,400 C 170,400 150,380 150,350 Z";
+
+  // Define sectors for Monza
+  const sectors = {
+    sector1: {
+      path: "M 150,400 L 150,300 C 150,270 170,250 200,250 L 400,250",
+      color: "rgba(255, 0, 0, ",
+    }, // Sector 1: Start to First Lesmo
+    sector2: {
+      path: "M 400,250 C 430,250 450,230 450,200 L 450,100 C 450,70 470,50 500,50 L 600,50 C 630,50 650,70 650,100 L 650,200 C 650,230 670,250 700,250",
+      color: "rgba(0, 255, 0, ",
+    }, // Sector 2: First Lesmo to Ascari
+    sector3: {
+      path: "M 700,250 L 750,250 C 780,250 800,270 800,300 L 800,350 C 800,380 780,400 750,400 L 700,400 C 670,400 650,420 650,450 L 650,500 C 650,530 630,550 600,550 L 500,550 C 470,550 450,530 450,500 L 450,450 C 450,420 430,400 400,400 L 200,400 C 170,400 150,380 150,350 Z",
+      color: "rgba(0, 0, 255, ",
+    }, // Sector 3: Ascari to finish
+  };
+
+  // Key turns on Monza
+  const turns = {
+    turn1: { x: 150, y: 350, r: 10, name: "Variante del Rettifilo" },
+    turn3: { x: 200, y: 250, r: 10, name: "Curva Grande" },
+    turn4: { x: 450, y: 200, r: 10, name: "First Lesmo" },
+    turn7: { x: 650, y: 100, r: 10, name: "Second Lesmo" },
+    turn8: { x: 700, y: 250, r: 10, name: "Variante Ascari" },
+    turn11: { x: 650, y: 450, r: 10, name: "Parabolica" },
+  };
+
+  // Driver position animation logic
+  const [driverPosition, setDriverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (
+      trackPathRef.current &&
+      typeof lapProgress === "number" &&
+      lapProgress >= 0 &&
+      lapProgress <= 1
+    ) {
+      const pathElement = trackPathRef.current;
+      const totalLength = pathElement.getTotalLength();
+      if (totalLength > 0) {
+        const point = pathElement.getPointAtLength(lapProgress * totalLength);
+        setDriverPosition({ x: point.x, y: point.y });
+      } else {
+        setDriverPosition(null);
+      }
+    } else {
+      setDriverPosition(null);
+    }
+  }, [lapProgress, trackPathRef]);
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 900 600"
+      preserveAspectRatio="xMidYMid meet"
+      {...props}
+    >
+      {/* Sector highlight paths */}
+      {Object.entries(sectors).map(([id, sector]) => (
+        <path
+          key={id}
+          d={sector.path}
+          fill="none"
+          stroke={
+            sector.color +
+            (highlightedSector === id ? highlightOpacity : sectorOpacity) +
+            ")"
+          }
+          strokeWidth={trackWidth + 5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          onClick={() => onSectorClick && onSectorClick(id)}
+          style={{ cursor: "pointer" }}
+        />
+      ))}
+
+      {/* Main Track Path */}
+      <path
+        ref={trackPathRef}
+        d={monzaTrackPath}
+        fill="none"
+        stroke={trackColor}
+        strokeWidth={trackWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Start/Finish Line */}
+      <line
+        x1="150"
+        y1="390"
+        x2="150"
+        y2="410"
+        stroke="#FFDD00"
+        strokeWidth="5"
+      />
+
+      {/* Turn Markers */}
+      {Object.entries(turns).map(([id, turn]) => (
+        <g
+          key={id}
+          transform={`translate(${turn.x}, ${turn.y})`}
+          style={{ cursor: "pointer" }}
+          onClick={() => onTurnClick && onTurnClick(id)}
+        >
+          <circle
+            r={turn.r}
+            fill={highlightedTurn === id ? "yellow" : "white"}
+            stroke="black"
+            strokeWidth="1"
+            opacity={highlightedTurn === id ? 1 : 0.7}
+          />
+          <text
+            x={turn.r + 5}
+            y="4"
+            fontSize="9"
+            fill="white"
+            opacity="0.9"
+            style={{ display: highlightedTurn === id ? "block" : "none" }}
+          >
+            {turn.name}
+          </text>
+        </g>
+      ))}
+
+      {/* Driver Position Animation Dot */}
+      {driverPosition && (
+        <circle
+          cx={driverPosition.x}
+          cy={driverPosition.y}
+          r="6"
+          fill="green"
+          stroke="white"
+          strokeWidth="1.5"
+          filter="url(#driver-glow-monza)"
+        />
+      )}
+
+      {/* Circuit labels */}
+      <text x="350" y="30" fill="#999" fontSize="14" fontWeight="bold">
+        Autodromo Nazionale Monza
+      </text>
+
+      {/* SVG Filters */}
+      <defs>
+        <filter
+          id="driver-glow-monza"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+        >
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+};
+
+// --- Available Circuits Data ---
+const AVAILABLE_CIRCUITS: Record<string, CircuitInfo> = {
+  monaco: {
+    id: "monaco",
+    name: "Circuit de Monaco",
+    location: "Monte Carlo",
+    country: "Monaco",
+    firstGrandPrix: 1950,
+    laps: 78,
+    length: "3.337",
+    svgComponent: MonacoCircuitSVG,
+    sectors: {
+      sector1: {
+        name: "Sector 1",
+        description: "Start/Finish to Casino Square",
+        color: "red",
+      },
+      sector2: {
+        name: "Sector 2",
+        description: "Casino to Tunnel Exit",
+        color: "green",
+      },
+      sector3: {
+        name: "Sector 3",
+        description: "Chicane to Anthony Noghes",
+        color: "blue",
+      },
+    },
+    turns: {
+      turn1: { number: 1, name: "Sainte Devote" },
+      turn4: { number: 4, name: "Casino Square" },
+      turn6: { number: 6, name: "Grand Hotel Hairpin" },
+      turn10: { number: 10, name: "Nouvelle Chicane" },
+      turn12: { number: 12, name: "Tabac" },
+      turn19: { number: 19, name: "Anthony Noghes" },
+    },
+  },
+  silverstone: {
+    id: "silverstone",
+    name: "Silverstone Circuit",
+    location: "Silverstone",
+    country: "United Kingdom",
+    firstGrandPrix: 1950,
+    laps: 52,
+    length: "5.891",
+    svgComponent: SilverstoneCircuitSVG,
+    sectors: {
+      sector1: {
+        name: "Sector 1",
+        description: "Abbey to Chapel",
+        color: "red",
+      },
+      sector2: {
+        name: "Sector 2",
+        description: "Hangar Straight to Stowe",
+        color: "green",
+      },
+      sector3: {
+        name: "Sector 3",
+        description: "Vale to Club and Finish",
+        color: "blue",
+      },
+    },
+    turns: {
+      turn1: { number: 1, name: "Abbey" },
+      turn3: { number: 3, name: "Village" },
+      turn6: { number: 6, name: "Brooklands" },
+      turn9: { number: 9, name: "Copse" },
+      turn13: { number: 13, name: "Stowe" },
+      turn15: { number: 15, name: "Club" },
+    },
+  },
+  spa: {
+    id: "spa",
+    name: "Circuit de Spa-Francorchamps",
+    location: "Stavelot",
+    country: "Belgium",
+    firstGrandPrix: 1950,
+    laps: 44,
+    length: "7.004",
+    svgComponent: SpaCircuitSVG,
+    sectors: {
+      sector1: {
+        name: "Sector 1",
+        description: "La Source to Les Combes",
+        color: "red",
+      },
+      sector2: {
+        name: "Sector 2",
+        description: "Les Combes to Pouhon",
+        color: "green",
+      },
+      sector3: {
+        name: "Sector 3",
+        description: "Pouhon to Bus Stop",
+        color: "blue",
+      },
+    },
+    turns: {
+      turn1: { number: 1, name: "La Source" },
+      turn3: { number: 3, name: "Eau Rouge" },
+      turn7: { number: 7, name: "Les Combes" },
+      turn10: { number: 10, name: "Pouhon" },
+      turn15: { number: 15, name: "Blanchimont" },
+      turn19: { number: 19, name: "Bus Stop" },
+    },
+  },
+  monza: {
+    id: "monza",
+    name: "Autodromo Nazionale Monza",
+    location: "Monza",
+    country: "Italy",
+    firstGrandPrix: 1950,
+    laps: 53,
+    length: "5.793",
+    svgComponent: MonzaCircuitSVG,
+    sectors: {
+      sector1: {
+        name: "Sector 1",
+        description: "Start/Finish to First Lesmo",
+        color: "red",
+      },
+      sector2: {
+        name: "Sector 2",
+        description: "First Lesmo to Ascari",
+        color: "green",
+      },
+      sector3: {
+        name: "Sector 3",
+        description: "Ascari to Parabolica",
+        color: "blue",
+      },
+    },
+    turns: {
+      turn1: { number: 1, name: "Variante del Rettifilo" },
+      turn3: { number: 3, name: "Curva Grande" },
+      turn4: { number: 4, name: "First Lesmo" },
+      turn7: { number: 7, name: "Second Lesmo" },
+      turn8: { number: 8, name: "Variante Ascari" },
+      turn11: { number: 11, name: "Parabolica" },
+    },
+  },
+};
+
+// Map F1 API circuit IDs to our circuit IDs
+const CIRCUIT_ID_MAPPING: Record<string, string> = {
+  // Direct mappings for circuits we have SVGs for
+  monaco: "monaco",
+  monza: "monza",
+  spa: "spa",
+  silverstone: "silverstone",
+
+  // Map all other circuits to one of our available circuits
+  // This ensures all API circuit IDs map to a circuit we can visualize
+  albert_park: "silverstone", // Australia
+  americas: "monza", // USA
+  bahrain: "monza", // Bahrain
+  baku: "monaco", // Azerbaijan
+  catalunya: "silverstone", // Spain
+  hungaroring: "monaco", // Hungary
+  imola: "monza", // Italy
+  interlagos: "silverstone", // Brazil
+  jeddah: "monza", // Saudi Arabia
+  marina_bay: "monaco", // Singapore
+  red_bull_ring: "silverstone", // Austria
+  rodriguez: "monza", // Mexico
+  suzuka: "spa", // Japan
+  yas_marina: "silverstone", // Abu Dhabi
+  zandvoort: "spa", // Netherlands
+  ricard: "monza", // France
+  miami: "silverstone", // USA Miami
+  vegas: "monza", // USA Las Vegas
+  losail: "silverstone", // Qatar
+
+  // Additional mappings for any other circuit IDs that might appear
+  villeneuve: "monza", // Canada
+  sakhir: "monza", // Alternative name for Bahrain
+  portimao: "silverstone", // Portugal
+  mugello: "monza", // Italy
+  nurburgring: "spa", // Germany
+  istanbul: "silverstone", // Turkey
+  cota: "monza", // Alternative name for Circuit of the Americas
+
+  // Fallback for any other circuit IDs not explicitly mapped
+  default: "silverstone",
+};
+
+// --- Component ---
+
+const CircuitLayoutVisualizer: React.FC = () => {
+  const { selectedYear, setSelectedYear, resetToCurrentYear } =
+    useSeasonContext();
+  const { allRaceResults, isLoadingResults, resultsError, fetchAllResults } =
+    useRaceResultsContext();
+
+  // Log year changes and refresh data
+  useEffect(() => {
+    console.log(`Selected year changed to: ${selectedYear}`);
+
+    // Check if it's a future year (beyond current year)
+    const currentYear = new Date().getFullYear();
+
+    // Store a reference to whether we've already fetched for this year
+    // to prevent infinite loops
+    const yearKey = `fetched_${selectedYear}`;
+    const alreadyFetched = sessionStorage.getItem(yearKey);
+
+    if (selectedYear > currentYear) {
+      console.log(
+        `Year ${selectedYear} is in the future - handling gracefully`
+      );
+
+      // For future years, only fetch once per session to prevent infinite loops
+      if (!alreadyFetched) {
+        console.log(
+          `First fetch for future year ${selectedYear} - marking as fetched`
+        );
+        sessionStorage.setItem(yearKey, "true");
+        fetchAllResults();
+      } else {
+        console.log(
+          `Already fetched for future year ${selectedYear} - skipping to prevent loops`
+        );
+      }
+    } else {
+      // For non-future years, fetch as normal but still track to prevent excessive calls
+      if (!alreadyFetched) {
+        console.log(`Fetching data for year ${selectedYear}`);
+        sessionStorage.setItem(yearKey, "true");
+        fetchAllResults();
+      } else {
+        console.log(
+          `Already fetched data for year ${selectedYear} this session`
+        );
+      }
+    }
+  }, [selectedYear, fetchAllResults]);
+
+  const [selectedCircuitId, setSelectedCircuitId] = useState<string>(
+    Object.keys(AVAILABLE_CIRCUITS)[0] || ""
+  );
+  const [driversInfo, setDriversInfo] = useState<
+    Map<string, { name: string; team: string }>
+  >(new Map());
+  const [selectedDriverId, setSelectedDriverId] = useState<string>("");
+  const [fastestLapData, setFastestLapData] = useState<DriverFastestLap | null>(
+    null
+  );
+  const [highlightedSector, setHighlightedSector] = useState<
+    string | undefined
+  >();
+  const [highlightedTurn, setHighlightedTurn] = useState<string | undefined>();
+  const [lapProgress, setLapProgress] = useState<number | null>(null);
+  const [isLapAnimating, setIsLapAnimating] = useState(false);
+  const [showCircuitInfoPanel, setShowCircuitInfoPanel] = useState(false); // Default to showing driver info
+  const [availableRaceCircuits, setAvailableRaceCircuits] = useState<string[]>(
+    []
+  );
+
+  const animationRef = useRef<number | null>(null);
+  // Create a ref for the track path element
+  const trackPathRef = useRef<SVGPathElement>(null);
+
+  // --- Data Processing ---
+  const processedFastestLaps = useMemo(() => {
+    console.log("Processing race results for fastest laps", {
+      raceCount: Object.keys(allRaceResults).length,
+      selectedCircuitId,
+    });
+
+    // Maps and sets to track data
+    const driverLaps = new Map();
+    const driversFound = new Map();
+    const circuitsInYear = new Set();
+
+    // Skip processing if no race results
+    if (Object.keys(allRaceResults).length === 0) {
+      console.log("No race results to process");
+      return { driverLaps, driversFound, circuitsInYear };
+    }
+
+    // Track all circuit IDs found in API data
+    const allApiCircuitIds = new Set();
+
+    // First, log all available circuits from API data
+    Object.values(allRaceResults).forEach((race) => {
+      if (race?.circuit?.circuitId) {
+        allApiCircuitIds.add(race.circuit.circuitId);
+      }
+    });
+
+    console.log("API Circuit IDs found:", Array.from(allApiCircuitIds));
+    console.log("Available circuit mappings:", Object.keys(CIRCUIT_ID_MAPPING));
+
+    // Process each race result
+    Object.values(allRaceResults).forEach((race) => {
+      // Skip races without valid circuit data
+      if (!race?.circuit?.circuitId) {
+        console.warn("Race missing circuit ID:", race?.raceName);
+        return;
+      }
+
+      // Get the mapped circuit ID (or default)
+      const apiCircuitId = race.circuit.circuitId;
+      const mappedCircuitId =
+        CIRCUIT_ID_MAPPING[apiCircuitId] || CIRCUIT_ID_MAPPING.default;
+
+      // Track all unique circuit IDs in this year's data
+      if (mappedCircuitId) {
+        circuitsInYear.add(mappedCircuitId);
+      } else {
+        console.warn(
+          `No mapping for circuit ID: ${apiCircuitId} in race: ${race.raceName}`
+        );
+      }
+
+      // Skip further processing if this race isn't for the selected circuit
+      if (mappedCircuitId !== selectedCircuitId) {
+        return;
+      }
+
+      console.log(
+        `Processing race for selected circuit: ${race.raceName} (${apiCircuitId} -> ${mappedCircuitId})`
+      );
+
+      // Extract fastest laps from the race
+      const fastestLaps = race?.Results?.filter(
+        (result) =>
+          result?.FastestLap?.rank === "1" || result?.FastestLap?.Time?.time
+      );
+
+      if (!fastestLaps || fastestLaps.length === 0) {
+        console.warn(`No fastest laps found for race: ${race.raceName}`);
+        return;
+      }
+
+      // Process each driver's fastest lap
+      fastestLaps.forEach((result) => {
+        // Skip results without driver info
+        if (!result?.Driver?.driverId) {
+          console.warn("Result missing driver ID");
+          return;
+        }
+
+        const driverId = result.Driver.driverId;
+        const driverName = `${result.Driver.givenName} ${result.Driver.familyName}`;
+
+        // Store driver info
+        driversFound.set(driverId, {
+          id: driverId,
+          name: driverName,
+          code: result.Driver.code || driverId.substring(0, 3).toUpperCase(),
+          constructorId: result.Constructor?.constructorId || "unknown",
+          constructorName: result.Constructor?.name || "Unknown Team",
+        });
+
+        // Process lap time
+        const lapTime = result?.FastestLap?.Time?.time;
+        if (!lapTime) {
+          console.warn(`Missing lap time for driver: ${driverName}`);
+          return;
+        }
+
+        // Convert lap time to milliseconds for comparison
+        const timeInMs = timeStringToMs(lapTime);
+
+        // Only update if this is a new driver or the lap is faster
+        if (
+          !driverLaps.has(driverId) ||
+          timeInMs < driverLaps.get(driverId).timeInMs
+        ) {
+          // Create synthetic sector times (dividing the lap into 3 sectors)
+          const sectorTimes = createSyntheticSectorTimes(timeInMs);
+
+          driverLaps.set(driverId, {
+            time: lapTime,
+            timeInMs,
+            sectors: sectorTimes,
+            constructorId: result.Constructor?.constructorId || "unknown",
+            position: result.position || "0",
+          });
+
+          console.log(
+            `Added/Updated fastest lap for ${driverName}: ${lapTime}`
+          );
+        }
+      });
+    });
+
+    console.log("Processed race results:", {
+      totalDrivers: driversFound.size,
+      circuitsFound: circuitsInYear.size,
+      driverLapsCount: driverLaps.size,
+    });
+
+    return { driverLaps, driversFound, circuitsInYear };
+  }, [allRaceResults, selectedCircuitId]);
+
+  // Helper function to create synthetic sector times (dividing lap into 3 parts)
+  function createSyntheticSectorTimes(totalTimeMs) {
+    // Create slightly varied sector times that add up to the total
+    const variance = 0.1; // 10% variance
+
+    const baseSectorTime = totalTimeMs / 3;
+
+    // Create random variations for first two sectors
+    const sector1Time =
+      baseSectorTime * (1 - variance / 2 + Math.random() * variance);
+    const sector2Time =
+      baseSectorTime * (1 - variance / 2 + Math.random() * variance);
+
+    // Ensure the final sector makes the total add up correctly
+    const sector3Time = totalTimeMs - sector1Time - sector2Time;
+
+    return [sector1Time, sector2Time, sector3Time];
+  }
+
+  // Convert time string (e.g., "1:30.456") to milliseconds
+  function timeStringToMs(timeStr) {
+    // Handle different time formats
+    let minutes = 0;
+    let seconds = 0;
+    let ms = 0;
+
+    if (timeStr.includes(":")) {
+      // Format: "1:30.456"
+      const [minPart, secPart] = timeStr.split(":");
+      minutes = parseInt(minPart, 10);
+
+      if (secPart.includes(".")) {
+        const [sec, msec] = secPart.split(".");
+        seconds = parseInt(sec, 10);
+        ms = parseInt(msec, 10) * (msec.length === 3 ? 1 : 10);
+      } else {
+        seconds = parseInt(secPart, 10);
+      }
+    } else if (timeStr.includes(".")) {
+      // Format: "90.456"
+      const [sec, msec] = timeStr.split(".");
+      seconds = parseInt(sec, 10);
+      ms = parseInt(msec, 10) * (msec.length === 3 ? 1 : 10);
+    } else {
+      // Format: "90"
+      seconds = parseInt(timeStr, 10);
+    }
+
+    return minutes * 60 * 1000 + seconds * 1000 + ms;
+  }
+
+  // Derived state for available circuits with race data
+  const availableRaceCircuits = useMemo(() => {
+    // Filter AVAILABLE_CIRCUITS to only include those with race data
+    return Object.keys(AVAILABLE_CIRCUITS).filter((circuitId) =>
+      processedFastestLaps.circuitsInYear.has(circuitId)
+    );
+  }, [processedFastestLaps.circuitsInYear]);
+
+  // Update available circuits when data changes
+  useEffect(() => {
+    // Filter AVAILABLE_CIRCUITS to only include those with race data
+    const circuitsWithData = Object.keys(AVAILABLE_CIRCUITS).filter(
+      (circuitId) => processedFastestLaps.circuitsInYear.has(circuitId)
+    );
+
+    console.log("Checking available circuits:", {
+      circuitsWithData: processedFastestLaps.circuitsInYear.size,
+      availableCircuits: circuitsWithData.length,
+    });
+
+    // Update state with filtered circuits
+    setAvailableRaceCircuits(circuitsWithData);
+
+    // If we have race results but no circuits are mapped correctly, warn and log circuit IDs
+    if (
+      Object.keys(allRaceResults).length > 0 &&
+      processedFastestLaps.circuitsInYear.size === 0
+    ) {
+      console.warn("Race results exist but no circuits were mapped correctly!");
+
+      // Log all circuit IDs from race results
+      const apiCircuitIds = new Set();
+      Object.values(allRaceResults).forEach((race) => {
+        if (race?.circuit?.circuitId) {
+          apiCircuitIds.add(race.circuit.circuitId);
+        }
+      });
+
+      console.warn("API circuit IDs found:", Array.from(apiCircuitIds));
+      console.warn(
+        "Available circuit mappings:",
+        Object.keys(CIRCUIT_ID_MAPPING)
+      );
+    }
+
+    // If we have no selected circuit but have available circuits, select the first one
+    if (
+      (!selectedCircuitId ||
+        !processedFastestLaps.circuitsInYear.has(selectedCircuitId)) &&
+      circuitsWithData.length > 0
+    ) {
+      console.log(
+        `Auto-selecting circuit: ${circuitsWithData[0]} (${
+          AVAILABLE_CIRCUITS[circuitsWithData[0]]?.name || "unnamed"
+        })`
+      );
+      setSelectedCircuitId(circuitsWithData[0]);
+    }
+  }, [allRaceResults, processedFastestLaps.circuitsInYear, selectedCircuitId]);
+
+  // Update driver information when fastest laps change
+  useEffect(() => {
+    // Convert the processedFastestLaps.driversFound map to the driversInfo map
+    const newDriversInfo = new Map();
+
+    processedFastestLaps.driversFound.forEach((driver, driverId) => {
+      newDriversInfo.set(driverId, {
+        ...driver,
+        lapTime: processedFastestLaps.driverLaps.get(driverId)?.time || "",
+        sectors: processedFastestLaps.driverLaps.get(driverId)?.sectors || [
+          0, 0, 0,
+        ],
+      });
+    });
+
+    console.log(`Setting driver info with ${newDriversInfo.size} drivers`, {
+      circuit: selectedCircuitId,
+      driversFound: processedFastestLaps.driversFound.size,
+      driverLaps: processedFastestLaps.driverLaps.size,
+    });
+
+    // Update the state
+    setDriversInfo(newDriversInfo);
+
+    // If we have drivers but none selected, auto-select the first one
+    if (
+      newDriversInfo.size > 0 &&
+      (!selectedDriverId || !newDriversInfo.has(selectedDriverId))
+    ) {
+      const firstDriverId = Array.from(newDriversInfo.keys())[0];
+      console.log(
+        `Auto-selecting driver: ${firstDriverId} (${
+          newDriversInfo.get(firstDriverId)?.name || "unnamed"
+        })`
+      );
+      setSelectedDriverId(firstDriverId);
+    } else if (newDriversInfo.size === 0 && selectedDriverId) {
+      // Clear selected driver if we have no drivers
+      console.log("No drivers available, clearing selected driver");
+      setSelectedDriverId("");
+    }
+  }, [
+    processedFastestLaps.driversFound,
+    processedFastestLaps.driverLaps,
+    selectedCircuitId,
+    selectedDriverId,
+  ]);
+
+  // Reset to current year helper function
+  const resetToCurrentYear = () => {
+    const currentYear = new Date().getFullYear();
+    if (selectedYear !== currentYear) {
+      console.log(`Resetting to current year: ${currentYear}`);
+      setSelectedYear(currentYear);
+    } else {
+      console.log("Already on current year, refreshing data");
+      fetchAllResults();
+    }
+  };
+
+  // Handler for driver selection
+  const handleDriverChange = (e) => {
+    const driverId = e.target.value;
+    console.log(`Driver selection changed to: ${driverId}`);
+
+    if (driverId && driversInfo.has(driverId)) {
+      setSelectedDriverId(driverId);
+      console.log(`Selected driver: ${driversInfo.get(driverId).name}`);
+    } else {
+      console.warn(`Invalid driver selection: ${driverId}`);
+      setSelectedDriverId("");
+    }
+  };
+
+  // Handler for circuit selection
+  const handleCircuitChange = (e) => {
+    const circuitId = e.target.value;
+    console.log(`Circuit selection changed to: ${circuitId}`);
+
+    if (circuitId && AVAILABLE_CIRCUITS[circuitId]) {
+      setSelectedCircuitId(circuitId);
+
+      // Clear selected driver when changing circuits
+      setSelectedDriverId("");
+    } else {
+      console.warn(`Invalid circuit selection: ${circuitId}`);
+    }
+  };
+
+  // Get selected driver info
+  const selectedDriver = selectedDriverId
+    ? driversInfo.get(selectedDriverId)
+    : null;
+
+  // --- Lap Animation Logic ---
+  useEffect(() => {
+    const cleanupAnimation = () => {
+      if (animationRef.current !== null)
+        cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    };
+    if (isLapAnimating && trackPathRef.current) {
+      let startTime: number | null = null;
+      const duration = 10000; // Lap simulation duration (10 seconds)
+      const pathElement = trackPathRef.current;
+      const totalLength = pathElement.getTotalLength();
+
+      if (totalLength === 0) {
+        // Path not ready?
+        console.warn("Track path has zero length, cannot animate.");
+        setIsLapAnimating(false);
+        return;
+      }
+
+      const animateLap = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        let progress = Math.min(elapsed / duration, 1);
+
+        setLapProgress(progress);
+
+        if (progress < 1) {
+          animationRef.current = requestAnimationFrame(animateLap);
+        } else {
+          setIsLapAnimating(false);
+          // Optionally reset progress visually after completion, or keep dot at end
+          // setLapProgress(null); // Resets dot position
+          setTimeout(() => setLapProgress(null), 500); // Keep dot at end for 0.5s
+        }
+      };
+      animationRef.current = requestAnimationFrame(animateLap);
+    } else {
+      cleanupAnimation();
+    }
+    return cleanupAnimation;
+  }, [isLapAnimating, trackPathRef]); // Depend on the ref itself
+
+  // Clear highlights when circuit or driver changes
+  useEffect(() => {
+    setHighlightedSector(undefined);
+    setHighlightedTurn(undefined);
+  }, [selectedCircuitId, selectedDriverId]);
+
+  // --- Event Handlers ---
+  const handleCircuitChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedCircuitId(event.target.value);
+    setIsLapAnimating(false);
+    setLapProgress(null);
+    setHighlightedSector(undefined);
+    setHighlightedTurn(undefined);
+  };
+  const handleSectorClick = (sectorId: string) => {
+    setHighlightedSector(sectorId === highlightedSector ? undefined : sectorId);
+  };
+  const handleTurnClick = (turnId: string) => {
+    setHighlightedTurn(turnId === highlightedTurn ? undefined : turnId);
+  };
+  const handleAnimateLap = () => {
+    if (!isLapAnimating) {
+      setIsLapAnimating(true);
+      setLapProgress(0);
+    }
+  };
+
+  // --- Selected Circuit & SVG ---
+  const selectedCircuitInfo = AVAILABLE_CIRCUITS[selectedCircuitId];
+  const CircuitSVGComponent = selectedCircuitInfo?.svgComponent;
+
+  return (
+    <div className="p-4 bg-gray-900 rounded-lg shadow-lg relative text-gray-200">
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+        <h2 className="text-xl font-bold text-white">
+          Circuit Layout & Analysis ({selectedYear})
+        </h2>
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          {/* Circuit Selection */}
+          <div className="flex-1">
+            <div className="flex justify-between items-center mb-1">
+              <label
+                htmlFor="circuitSelectViz"
+                className="block text-sm font-medium text-gray-300"
+              >
+                Circuit
+                {availableRaceCircuits.length > 0 &&
+                  ` (${availableRaceCircuits.length} available)`}
+              </label>
+              <span className="text-xs text-blue-400">
+                {selectedYear} Season
+              </span>
+            </div>
+            <div className="relative">
+              <select
+                id="circuitSelectViz"
+                value={selectedCircuitId}
+                onChange={handleCircuitChange}
+                className={`w-full bg-gray-800 text-white rounded px-3 py-2 border focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 ${
+                  availableRaceCircuits.length === 0
+                    ? "border-gray-700"
+                    : availableRaceCircuits.includes(selectedCircuitId)
+                    ? "border-green-600"
+                    : "border-amber-600"
+                }`}
+                disabled={isLoadingResults}
+              >
+                {isLoadingResults ? (
+                  <option value="">Loading circuits...</option>
+                ) : availableRaceCircuits.length > 0 ? (
+                  availableRaceCircuits.map((circuitId) => {
+                    const circuit = AVAILABLE_CIRCUITS[circuitId];
+                    return (
+                      <option key={circuitId} value={circuitId}>
+                        {circuit?.name || circuitId} (
+                        {circuit?.country || "Unknown"})
+                      </option>
+                    );
+                  })
+                ) : (
+                  Object.values(AVAILABLE_CIRCUITS).map((circuit) => (
+                    <option key={circuit.id} value={circuit.id}>
+                      {circuit.name} ({circuit.country})
+                    </option>
+                  ))
+                )}
+              </select>
+              {isLoadingResults && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                </div>
+              )}
+            </div>
+            {selectedCircuitInfo && (
+              <p className="text-xs text-blue-400 mt-1 flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3 mr-1"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                {selectedCircuitInfo.name}, {selectedCircuitInfo.country}
+              </p>
+            )}
+          </div>
+          {/* Driver Selection */}
+          <div className="flex-1">
+            <div className="flex justify-between items-center mb-1">
+              <label
+                htmlFor="driverSelectViz"
+                className="block text-sm font-medium text-gray-300"
+              >
+                Driver{" "}
+                {driversInfo.size > 0 ? `(${driversInfo.size} available)` : ""}
+              </label>
+              <button
+                onClick={() => {
+                  console.log("Forcing refresh of race data for driver info");
+                  fetchAllResults();
+                }}
+                disabled={isLoadingResults}
+                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Reload driver data"
+              >
+                {isLoadingResults ? (
+                  <>
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent mr-1"></span>
+                    Loading...
+                  </>
+                ) : (
+                  <>Refresh</>
+                )}
+              </button>
+            </div>
+            <div className="relative">
+              <select
+                id="driverSelectViz"
+                value={selectedDriverId}
+                onChange={handleDriverChange}
+                className={`w-full bg-gray-800 text-white rounded px-3 py-2 border focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 ${
+                  driversInfo.size === 0
+                    ? "border-amber-600"
+                    : selectedDriverId
+                    ? "border-green-600"
+                    : "border-gray-700"
+                }`}
+                disabled={isLoadingResults || driversInfo.size === 0}
+              >
+                {driversInfo.size === 0 ? (
+                  <option value="">-- No Drivers Available --</option>
+                ) : (
+                  <>
+                    <option value="">-- Select Driver --</option>
+                    {Array.from(driversInfo.entries()).map(([id, driver]) => (
+                      <option key={id} value={id}>
+                        {driver.name} ({driver.team})
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+              {isLoadingResults && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                </div>
+              )}
+            </div>
+            {driversInfo.size === 0 && !isLoadingResults && (
+              <p className="text-xs text-amber-400 mt-1 flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3 mr-1"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+                No drivers found for this circuit. Try selecting a different
+                circuit or year.
+              </p>
+            )}
+            {selectedDriverId && (
+              <p className="text-xs text-green-400 mt-1 flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3 mr-1"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                Driver selected: {driversInfo.get(selectedDriverId)?.name}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Loading / Error */}
+      {isLoadingResults && (
+        <div className="flex items-center justify-center h-96 bg-gray-800 rounded-md">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mr-3"></div>
+          <div>
+            <p className="text-gray-300 font-medium">Loading race data...</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Fetching results for year {selectedYear}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {resultsError && !isLoadingResults && (
+        <div className="my-4 p-4 bg-red-900 border border-red-700 text-red-200 rounded-lg">
+          <h3 className="font-bold mb-2">Error Loading Race Data</h3>
+          <p className="text-sm">
+            {typeof resultsError === "string" ? resultsError : "Unknown error"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => fetchAllResults()}
+              className="bg-red-800 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+            >
+              Retry Loading Data
+            </button>
+            <button
+              onClick={resetToCurrentYear}
+              className="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm"
+            >
+              Try Current Year
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Debug panel for data status */}
+      {!isLoadingResults &&
+        !resultsError &&
+        Object.keys(allRaceResults).length > 0 && (
+          <div className="mb-4 p-3 bg-gray-800 border border-gray-700 rounded-lg">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <div className="flex items-center">
+                <span className="font-medium text-gray-300 mr-1">
+                  Data Status:
+                </span>
+                <span className="text-green-400">✓ Race Data Loaded</span>
+              </div>
+              <div className="flex items-center">
+                <span className="font-medium text-gray-300 mr-1">Races:</span>
+                <span className="text-blue-400">
+                  {Object.keys(allRaceResults).length}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <span className="font-medium text-gray-300 mr-1">
+                  Circuits:
+                </span>
+                <span
+                  className={
+                    processedFastestLaps.circuitsInYear.size > 0
+                      ? "text-green-400"
+                      : "text-amber-400"
+                  }
+                >
+                  {processedFastestLaps.circuitsInYear.size}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <span className="font-medium text-gray-300 mr-1">Drivers:</span>
+                <span
+                  className={
+                    driversInfo.size > 0 ? "text-green-400" : "text-red-400"
+                  }
+                >
+                  {driversInfo.size}
+                </span>
+              </div>
+              <div className="ml-auto">
+                <button
+                  onClick={() => {
+                    console.log("Force refreshing data");
+                    fetchAllResults();
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
+                >
+                  Refresh Data
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* Special handling for future years */}
+      {!isLoadingResults &&
+        !resultsError &&
+        selectedYear > new Date().getFullYear() && (
+          <div className="my-4 p-4 bg-blue-900/30 border border-blue-700 text-blue-200 rounded-lg">
+            <h3 className="font-bold mb-2">Future Season</h3>
+            <p className="text-sm mb-3">
+              You've selected the {selectedYear} season which hasn't occurred
+              yet. No race data is available. You can explore the circuit
+              layouts, but driver data will be unavailable until the{" "}
+              {selectedYear} season begins.
+            </p>
+            <button
+              onClick={resetToCurrentYear}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+            >
+              Switch to Current Season
+            </button>
+
+            {/* Debug information for future years */}
+            <div className="mt-4 pt-3 border-t border-blue-700">
+              <p className="text-xs text-blue-300 mb-2">Debug Info:</p>
+              <pre className="text-xs text-blue-300 overflow-auto max-h-20 bg-blue-900/50 p-2 rounded">
+                Race Results Count: {Object.keys(allRaceResults).length}
+                Circuits Found: {processedFastestLaps.circuitsInYear.size}
+                Driver Count: {processedFastestLaps.driversFound.size}
+              </pre>
+            </div>
+          </div>
+        )}
+
+      {/* No data handler */}
+      {!isLoadingResults &&
+        !resultsError &&
+        Object.keys(allRaceResults).length === 0 &&
+        selectedYear <= new Date().getFullYear() && (
+          <div className="my-4 p-4 bg-amber-900/30 border border-amber-700 text-amber-200 rounded-lg">
+            <h3 className="font-bold mb-2">No Race Data Available</h3>
+            <p className="text-sm mb-3">
+              No race data is available for the {selectedYear} season. This
+              could be because:
+            </p>
+            <ul className="list-disc list-inside text-sm mb-3">
+              <li>The selected season's data hasn't been loaded yet</li>
+              <li>There might be an issue with the data source</li>
+              <li>The API might be experiencing temporary problems</li>
+            </ul>
+            <button
+              onClick={() => fetchAllResults()}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded text-sm mr-2"
+            >
+              Retry Loading Data
+            </button>
+            <button
+              onClick={resetToCurrentYear}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded text-sm"
+            >
+              Switch to Current Season
+            </button>
+          </div>
+        )}
+
+      {/* Add debug panel for driver loading issues */}
+      {!isLoadingResults &&
+        !resultsError &&
+        driversInfo.size === 0 &&
+        Object.keys(allRaceResults).length > 0 && (
+          <div className="my-4 p-4 bg-purple-900/30 border border-purple-700 text-purple-200 rounded-lg">
+            <h3 className="font-bold mb-2">Driver Selection Issue Detected</h3>
+            <p className="text-sm mb-3">
+              Race data was loaded but no drivers were found for the selected
+              circuit. This could be due to a circuit ID mapping issue or
+              missing race data.
+            </p>
+            <div className="mt-4 pt-3 border-t border-purple-700">
+              <p className="text-xs text-purple-300 mb-2">Debug Info:</p>
+              <pre className="text-xs text-purple-300 overflow-auto max-h-40 bg-purple-900/50 p-2 rounded whitespace-pre-wrap">
+                Selected Circuit: {selectedCircuitId}
+                Available AVAILABLE_CIRCUITS:{" "}
+                {Object.keys(AVAILABLE_CIRCUITS).join(", ")}
+                Circuits in Results:{" "}
+                {Array.from(processedFastestLaps.circuitsInYear).join(", ")}
+                Race Results Count: {Object.keys(allRaceResults).length}
+                Circuit Results Count:{" "}
+                {
+                  Object.values(allRaceResults).filter(
+                    (race) =>
+                      race?.circuit?.circuitId &&
+                      (CIRCUIT_ID_MAPPING[race.circuit.circuitId] ||
+                        CIRCUIT_ID_MAPPING.default) === selectedCircuitId
+                  ).length
+                }
+                API Circuit IDs:
+                {Object.values(allRaceResults)
+                  .map((race) => race?.circuit?.circuitId || "unknown")
+                  .filter(Boolean)
+                  .map((id) => `\n - ${id}`)
+                  .join("")}
+                Race Names:
+                {Object.values(allRaceResults)
+                  .map(
+                    (race) =>
+                      `\n - ${race?.raceName} (${
+                        race?.circuit?.circuitId || "unknown"
+                      })`
+                  )
+                  .join("")}
+              </pre>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                onClick={() => fetchAllResults()}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm"
+              >
+                Reload Race Data
+              </button>
+
+              {availableRaceCircuits.length > 0 &&
+                selectedCircuitId !== availableRaceCircuits[0] && (
+                  <button
+                    onClick={() =>
+                      setSelectedCircuitId(availableRaceCircuits[0])
+                    }
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm"
+                  >
+                    Switch to{" "}
+                    {AVAILABLE_CIRCUITS[availableRaceCircuits[0]]?.name ||
+                      availableRaceCircuits[0]}
+                  </button>
+                )}
+
+              {Object.keys(AVAILABLE_CIRCUITS).map((circuitId) => (
+                <button
+                  key={circuitId}
+                  onClick={() => setSelectedCircuitId(circuitId)}
+                  className={`${
+                    selectedCircuitId === circuitId
+                      ? "bg-purple-800 text-purple-200"
+                      : "bg-purple-600 hover:bg-purple-700 text-white"
+                  } px-3 py-1 rounded text-sm`}
+                >
+                  Try {AVAILABLE_CIRCUITS[circuitId].name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+      {/* Visualization Area */}
+      {!isLoadingResults && !resultsError && selectedCircuitId && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+          {/* Circuit SVG */}
+          <div className="lg:col-span-2 bg-gray-800 rounded-lg p-4 shadow-md flex flex-col items-center justify-center min-h-[450px]">
+            <div className="w-full mb-2 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-white">
+                {selectedCircuitInfo?.name || "Circuit Layout"}
+              </h3>
+              <button
+                onClick={handleAnimateLap}
+                disabled={isLapAnimating || !trackPathRef.current}
+                className={`px-3 py-1 text-sm rounded ${
+                  isLapAnimating || !trackPathRef.current
+                    ? "bg-gray-600 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {isLapAnimating ? "Animating..." : "Simulate Lap"}
+              </button>
+            </div>
+            <div className="w-full flex-grow relative flex items-center justify-center overflow-hidden">
+              {" "}
+              {/* Added overflow-hidden */}
+              <ErrorBoundary componentName="Circuit SVG Display">
+                {CircuitSVGComponent ? (
+                  // Pass the ref to the SVG component
+                  <CircuitSVGComponent
+                    className="w-full h-full max-w-full max-h-[500px] object-contain" // Added max sizes
+                    highlightedSector={highlightedSector}
+                    highlightedTurn={highlightedTurn}
+                    onSectorClick={handleSectorClick}
+                    onTurnClick={handleTurnClick}
+                    lapProgress={lapProgress ?? undefined}
+                    trackPathRef={
+                      trackPathRef as React.RefObject<SVGPathElement>
+                    } // Type assertion to fix error
+                  />
+                ) : (
+                  <p className="text-gray-500 p-4 text-center">
+                    SVG for {selectedCircuitInfo?.name || selectedCircuitId} is
+                    not available.
+                  </p>
+                )}
+              </ErrorBoundary>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Click sectors/turns on map to highlight. Path is illustrative.
+            </p>
+          </div>
+          {/* Info Panel */}
+          <div className="lg:col-span-1 bg-gray-800 rounded-lg p-4 shadow-md flex flex-col min-h-[450px]">
+            {/* Tab Controls */}
+            <div className="flex mb-4 border-b border-gray-700 flex-shrink-0">
+              <button
+                className={`py-2 px-4 font-medium ${
+                  !showCircuitInfoPanel
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+                onClick={() => setShowCircuitInfoPanel(false)}
+              >
+                Driver Data
+              </button>
+              <button
+                className={`py-2 px-4 font-medium ${
+                  showCircuitInfoPanel
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+                onClick={() => setShowCircuitInfoPanel(true)}
+              >
+                Circuit Details
+              </button>
+            </div>
+            <div className="flex-grow overflow-y-auto pr-2">
+              {" "}
+              {/* Allow content to scroll */}
+              {!showCircuitInfoPanel ? (
+                /* Driver Data View */ <>
+                  <h4 className="text-md font-semibold mb-3 text-gray-200">
+                    {selectedDriverId ? "Fastest Lap Data" : "Select a Driver"}
+                  </h4>
+                  {selectedDriverId && driversInfo.has(selectedDriverId) ? (
+                    <div className="space-y-3">
+                      <p className="text-gray-300">
+                        <span className="font-medium text-gray-100 w-20 inline-block">
+                          Driver:
+                        </span>{" "}
+                        {driversInfo.get(selectedDriverId)?.name}
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="font-medium text-gray-100 w-20 inline-block">
+                          Team:
+                        </span>{" "}
+                        {driversInfo.get(selectedDriverId)?.team}
+                      </p>
+                      {fastestLapData ? (
+                        <>
+                          <p className="text-gray-300">
+                            <span className="font-medium text-gray-100 w-20 inline-block">
+                              Best Lap:
+                            </span>{" "}
+                            <span className="text-xl font-mono text-cyan-400">
+                              {fastestLapData.lapTime}
+                            </span>
+                          </p>
+                          <p className="text-gray-300">
+                            <span className="font-medium text-gray-100 w-20 inline-block">
+                              On Lap:
+                            </span>{" "}
+                            {fastestLapData.lapNumber}
+                          </p>
+                          {fastestLapData.sectors && (
+                            <div className="mt-4 border-t border-gray-700 pt-3">
+                              <h5 className="font-medium text-gray-200 mb-2">
+                                Sector Times (Mock):
+                              </h5>
+                              <div className="grid grid-cols-3 gap-2">
+                                {Object.entries(fastestLapData.sectors).map(
+                                  ([sectorId, data]) => (
+                                    <div
+                                      key={sectorId}
+                                      className={`p-2 rounded text-center cursor-pointer ${
+                                        highlightedSector === sectorId
+                                          ? "bg-blue-900 border border-blue-700"
+                                          : "bg-gray-700 hover:bg-gray-600"
+                                      }`}
+                                      onClick={() =>
+                                        handleSectorClick(sectorId)
+                                      }
+                                    >
+                                      <div className="text-xs text-gray-400">
+                                        {selectedCircuitInfo?.sectors?.[
+                                          sectorId
+                                        ]?.name || sectorId}
+                                      </div>
+                                      <div className="font-mono text-sm">
+                                        {data.time}
+                                      </div>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-gray-400 italic mt-4">
+                          No fastest lap data for this driver at this circuit.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic mt-4 flex-grow flex items-center justify-center">
+                      Select a driver.
+                    </p>
+                  )}
+                </>
+              ) : (
+                /* Circuit Details View */ <>
+                  <h4 className="text-md font-semibold mb-3 text-gray-200">
+                    Circuit Information
+                  </h4>
+                  {selectedCircuitInfo ? (
+                    <div className="space-y-4">
+                      <div>
+                        <h5 className="font-medium text-gray-300 mb-1">
+                          Location
+                        </h5>
+                        <p className="text-gray-400">
+                          {selectedCircuitInfo.location},{" "}
+                          {selectedCircuitInfo.country}
+                        </p>
+                      </div>
+                      <div>
+                        <h5 className="font-medium text-gray-300 mb-1">
+                          Details
+                        </h5>
+                        <ul className="text-gray-400 text-sm space-y-1">
+                          <li>Length: {selectedCircuitInfo.length} km</li>
+                          <li>Race Laps: {selectedCircuitInfo.laps}</li>
+                          <li>
+                            First GP: {selectedCircuitInfo.firstGrandPrix}
+                          </li>
+                        </ul>
+                      </div>
+                      {selectedCircuitInfo.sectors && (
+                        <div>
+                          <h5 className="font-medium text-gray-300 mb-1">
+                            Sectors
+                          </h5>
+                          <ul className="text-gray-400 text-sm space-y-1">
+                            {Object.entries(selectedCircuitInfo.sectors).map(
+                              ([id, sector]) => (
+                                <li
+                                  key={id}
+                                  className={`px-2 py-1 rounded cursor-pointer ${
+                                    highlightedSector === id
+                                      ? "bg-gray-700"
+                                      : ""
+                                  }`}
+                                  onClick={() => handleSectorClick(id)}
+                                >
+                                  <span className="font-medium">
+                                    {sector.name}:
+                                  </span>{" "}
+                                  {sector.description}
+                                </li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedCircuitInfo.turns && (
+                        <div>
+                          <h5 className="font-medium text-gray-300 mb-1">
+                            Key Turns
+                          </h5>
+                          <ul className="text-gray-400 text-sm space-y-1">
+                            {Object.entries(selectedCircuitInfo.turns).map(
+                              ([id, turn]) => (
+                                <li
+                                  key={id}
+                                  className={`px-2 py-1 rounded cursor-pointer ${
+                                    highlightedTurn === id ? "bg-gray-700" : ""
+                                  }`}
+                                  onClick={() => handleTurnClick(id)}
+                                >
+                                  <span className="font-medium">
+                                    T{turn.number}
+                                    {turn.name ? ` (${turn.name})` : ""}
+                                  </span>
+                                </li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic">
+                      Circuit details not available.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>{" "}
+            {/* End Scrollable Area */}
+            {/* Footer/Limitations Note */}
+            <div className="mt-auto pt-4 border-t border-gray-700 flex-shrink-0">
+              <p className="text-sm text-yellow-500">Data/Viz Limitations:</p>
+              <ul className="list-disc list-inside text-xs text-gray-400 pl-2">
+                <li>Requires real SVG path data for accuracy.</li>
+                <li>Requires telemetry data for true lap animation.</li>
+                <li>Sector time data is currently mocked.</li>
+              </ul>
+            </div>
+          </div>{" "}
+          {/* End Info Panel */}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CircuitLayoutVisualizer;

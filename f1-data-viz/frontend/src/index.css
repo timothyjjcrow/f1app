@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@layer components {
+  /* Card Components */
+  .f1-card {
+    @apply bg-slate-800 rounded-xl p-10 shadow-xl mb-8 border border-slate-700;
+  }
+
+  .f1-card-title {
+    @apply text-2xl font-bold text-blue-400 mb-8;
+  }
+
+  .f1-card-description {
+    @apply text-lg text-slate-300 mb-8;
+  }
+
+  /* Data Container */
+  .f1-data-container {
+    @apply bg-slate-900 rounded-lg p-8 mt-6 border border-slate-700/50;
+  }
+
+  /* Form Controls */
+  .f1-select {
+    @apply bg-slate-700 text-white text-lg border border-slate-600 rounded-lg px-5 py-4 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-md;
+  }
+
+  .f1-select-label {
+    @apply block text-slate-300 text-lg mb-3 font-medium;
+  }
+
+  .f1-button {
+    @apply bg-red-600 hover:bg-red-700 text-white text-lg font-semibold py-4 px-8 rounded-lg transition-colors shadow-md;
+  }
+
+  /* Status Indicators */
+  .f1-loading {
+    @apply flex justify-center items-center h-52 bg-slate-900 rounded-lg p-8 text-blue-400 text-xl;
+  }
+
+  .f1-error {
+    @apply bg-red-900 text-white p-8 rounded-lg text-lg;
+  }
+
+  .f1-empty-state {
+    @apply flex flex-col items-center justify-center h-64 bg-slate-900 rounded-lg p-8 text-slate-400 text-lg;
+  }
+
+  /* Tab Navigation */
+  .f1-tabs {
+    @apply flex border-b-2 border-slate-700 mb-10;
+  }
+
+  .f1-tab {
+    @apply py-4 px-8 text-lg font-medium text-slate-400 hover:text-slate-300;
+  }
+
+  .f1-tab-active {
+    @apply py-4 px-8 text-lg font-medium text-blue-400 border-b-2 border-blue-400;
+  }
+
+  /* Table Styles */
+  .f1-table {
+    @apply min-w-full bg-slate-900 text-white text-lg border border-slate-700/50 rounded-lg overflow-hidden;
+  }
+
+  .f1-table-header {
+    @apply bg-slate-800 text-lg font-semibold;
+  }
+
+  .f1-table-row {
+    @apply border-t border-slate-800 hover:bg-slate-800/80 transition-colors;
+  }
+
+  .f1-table-cell {
+    @apply px-8 py-4;
+  }
+}
