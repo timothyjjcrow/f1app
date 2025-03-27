@@ -142,9 +142,6 @@ export const RaceResultsProvider: React.FC<RaceResultsProviderProps> = ({
       console.log(`Fetching race results for year ${year}, round ${round}...`);
       const data = await F1Data.fetchRaceResults(year, round);
 
-      // Check if this is likely a future race
-      const isFutureYear = year > new Date().getFullYear();
-
       // Validate the race results data
       if (validateRaceResults(data, year, round)) {
         console.log(

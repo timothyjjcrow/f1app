@@ -27,7 +27,7 @@ export interface CircuitInfo {
 }
 
 // Props for circuit SVG components
-export interface CircuitSVGProps extends SVGProps<SVGElement> {
+export interface CircuitSVGProps extends SVGProps<SVGSVGElement> {
   highlightedSector?: string;
   highlightedTurn?: string;
   onSectorClick?: (sectorId: string) => void;

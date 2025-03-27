@@ -56,8 +56,8 @@ export const StandingsProvider: React.FC<StandingsProviderProps> = ({
 
   // Validate driver standings data
   const validateStandingsData = (data: any, year: number): boolean => {
-    // Check if this is a future season
-    const isFuture = year > new Date().getFullYear();
+    // Check if this is a future season using the context value instead of direct check
+    const isFuture = isFutureSeason;
 
     // Check if data exists and is an object
     if (!data || typeof data !== "object") {

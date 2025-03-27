@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CircuitInfo, CircuitSVGProps, DriverInfo } from "./CircuitTypes";
+import { CircuitInfo, DriverInfo } from "./CircuitTypes";
 
 interface TrackProps {
   circuitInfo: CircuitInfo;
@@ -149,39 +149,6 @@ const DriverLapInfo: React.FC<{
     </div>
   );
 };
-
-// Reusable SVG Grid component
-const SVGGrid: React.FC<{
-  width: number;
-  height: number;
-  columns: number;
-  rows: number;
-}> = ({ width, height, columns, rows }) => (
-  <g opacity="0.1">
-    {Array.from({ length: columns }).map((_, i) => (
-      <line
-        key={`vgrid-${i}`}
-        x1={(i + 1) * (width / columns)}
-        y1="0"
-        x2={(i + 1) * (width / columns)}
-        y2={height}
-        stroke="#666"
-        strokeWidth="1"
-      />
-    ))}
-    {Array.from({ length: rows }).map((_, i) => (
-      <line
-        key={`hgrid-${i}`}
-        x1="0"
-        y1={(i + 1) * (height / rows)}
-        x2={width}
-        y2={(i + 1) * (height / rows)}
-        stroke="#666"
-        strokeWidth="1"
-      />
-    ))}
-  </g>
-);
 
 // Reusable SVG Filter definition for driver glow
 export const DriverGlowFilter: React.FC<{ id: string }> = ({ id }) => (
