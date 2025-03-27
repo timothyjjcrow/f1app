@@ -30,17 +30,21 @@ app.use(notFoundHandler);
 // Global error handler - must be last
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`API Available at http://localhost:${PORT}/api`);
-});
+// Only start the server if this file is run directly (not when imported as a module)
+// This is important for Vercel deployment
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`API Available at http://localhost:${PORT}/api`);
+  });
 
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (err) => {
-  console.error("Unhandled Promise Rejection:", err);
-  // In a production environment, you might want to exit the process
-  // process.exit(1);
-});
+  // Handle unhandled promise rejections
+  process.on("unhandledRejection", (err) => {
+    console.error("Unhandled Promise Rejection:", err);
+    // In a production environment, you might want to exit the process
+    // process.exit(1);
+  });
+}
 
-module.exports = app; // For testing purposes
+// Export the app for serverless functions (for Vercel)
+module.exports = app;

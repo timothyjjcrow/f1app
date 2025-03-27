@@ -183,8 +183,14 @@ class ApiClient {
   private instance: AxiosInstance;
 
   constructor() {
+    // Use relative URL for API requests - this works both in development and production
+    const baseURL =
+      process.env.NODE_ENV === "production"
+        ? "/api" // In production (Vercel), use relative path
+        : "http://localhost:5001/api"; // In development, use localhost
+
     this.instance = axios.create({
-      baseURL: "http://localhost:5001/api",
+      baseURL,
       timeout: 10000,
       headers: {
         "Content-Type": "application/json",
