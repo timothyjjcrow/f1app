@@ -13,7 +13,11 @@ npm install
 # Build frontend
 echo "🏗️ Building frontend..."
 cd f1-data-viz/frontend
+echo "Cleaning previous installations..."
+rm -rf node_modules package-lock.json || true
+echo "Installing frontend dependencies..."
 npm install
+echo "Building frontend..."
 npm run build
 echo "✅ Frontend build completed - output in dist directory"
 echo "Dist directory contents:"
@@ -29,6 +33,7 @@ ls -la ../../dist
 # Build backend
 echo "🏗️ Building backend..."
 cd ../backend
+echo "Installing backend dependencies..."
 npm install
 echo "✅ Backend build completed"
 
