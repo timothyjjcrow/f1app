@@ -1,9 +1,9 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import { resolve } from "path";
+const { defineConfig } = require("vite");
+const react = require("@vitejs/plugin-react");
+const { resolve } = require("path");
 
 // https://vite.dev/config/
-export default defineConfig({
+module.exports = defineConfig({
   plugins: [react()],
   define: {
     "process.env.NODE_ENV": JSON.stringify(
