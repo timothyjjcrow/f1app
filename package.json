@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "F1 Data Visualization App",
   "scripts": {
-    "build": "./build.sh",
+    "build": "chmod +x ./build.sh && ./build.sh",
+    "postbuild": "cp -r f1-data-viz/frontend/dist/* dist/ 2>/dev/null || echo 'No files to copy'",
     "start": "cd f1-data-viz/backend && node server.js",
     "dev:frontend": "cd f1-data-viz/frontend && npm run dev",
     "dev:backend": "cd f1-data-viz/backend && npm run dev",

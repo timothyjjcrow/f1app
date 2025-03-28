@@ -4,6 +4,7 @@
 set -e # Exit immediately if a command exits with a non-zero status
 
 echo "🏗️ Starting build process..."
+echo "Current directory: $(pwd)"
 
 # Install root dependencies
 echo "📦 Installing root dependencies..."
@@ -15,6 +16,15 @@ cd f1-data-viz/frontend
 npm install
 npm run build
 echo "✅ Frontend build completed - output in dist directory"
+echo "Dist directory contents:"
+ls -la dist
+
+# Ensure dist directory is accessible from project root
+echo "Creating symlink to dist for Vercel"
+mkdir -p ../../dist
+cp -r dist/* ../../dist/
+echo "Root dist directory contents:"
+ls -la ../../dist
 
 # Build backend
 echo "🏗️ Building backend..."
@@ -36,5 +46,8 @@ if [ ! -f api/index.js ]; then
 else
   echo "API entry point already exists"
 fi
+
+echo "Final project structure:"
+find . -type f -not -path "*/node_modules/*" -not -path "*/\.*" | sort
 
 echo "✅ Build process completed successfully!" 
