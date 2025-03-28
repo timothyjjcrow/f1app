@@ -6,10 +6,7 @@
   "installCommand": "npm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
-    {
-      "source": "/(.*\\.(js|css|svg|ico|jpg|jpeg|png|webp|avif|gif|woff|woff2|ttf|otf)$)",
-      "destination": "/$1"
-    },
+    { "source": "/(.+)\\.([a-z]+)$", "destination": "/$1.$2" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
