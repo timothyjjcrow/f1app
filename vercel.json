@@ -4,14 +4,12 @@
   "devCommand": "npm run dev",
   "outputDirectory": "f1-data-viz/frontend/dist",
   "installCommand": "npm install",
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index.js" }],
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/assets/(.*)", "dest": "/assets/$1" },
-    { "src": "/(.*).js", "dest": "/$1.js" },
-    { "src": "/(.*).css", "dest": "/$1.css" },
-    { "src": "/(.*).svg", "dest": "/$1.svg" },
-    { "src": "/(.*).ico", "dest": "/$1.ico" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    {
+      "source": "/(.*\\.(js|css|svg|ico|jpg|jpeg|png|webp|avif|gif|woff|woff2|ttf|otf)$)",
+      "destination": "/$1"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
